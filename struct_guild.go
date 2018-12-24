@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	"github.com/andersfylling/disgord/constant"
+	"github.com/andersfylling/snowflake/v3"
 )
 
 // consts inspired by: https://github.com/bwmarrin/discordgo/blob/master/structs.go
@@ -196,6 +197,8 @@ type Guild struct {
 	Presences   []*UserPresence `json:"presences,omitempty"`    // ?*|
 
 	//highestSnowflakeAmoungMembers Snowflake
+
+	copyOf snowflake.ID
 }
 
 func (g *Guild) copyOverToCache(other interface{}) (err error) {
@@ -656,9 +659,11 @@ func (g *Guild) Emoji(id Snowflake) (emoji *Emoji, err error) {
 
 // DeepCopy see interface at struct.go#DeepCopier
 func (g *Guild) DeepCopy() (copy interface{}) {
-	copy = NewGuild()
-	g.CopyOverTo(copy)
-
+	return g.Duplicate()
+}
+func (g *Guild) Duplicate() (duplicate *Guild) {
+	duplicate = NewGuild()
+	g.CopyOverTo(duplicate)
 	return
 }
 
@@ -696,6 +701,8 @@ func (g *Guild) CopyOverTo(other interface{}) (err error) {
 	guild.Large = g.Large
 	guild.Unavailable = g.Unavailable
 	guild.MemberCount = g.MemberCount
+
+	guild.copyOf = g.ID
 
 	// pointers
 	if !g.ApplicationID.Empty() {
@@ -766,8 +773,22 @@ func (g *Guild) CopyOverTo(other interface{}) (err error) {
 	return
 }
 
+
+
+func (g *Guild) getDiscordID() snowflake.ID {
+	return g.ID
+}
+
+func (g *Guild) isACopyOf(obj discordSaver) bool {
+	if or, ok := obj.(*Guild); ok {
+		return g.copyOf == or.ID
+	}
+
+	return false
+}
+
 // saveToDiscord creates a new Guild if ID is empty or updates an existing one
-func (g *Guild) saveToDiscord(session Session) (err error) {
+func (g *Guild) saveToDiscord(session Session, changes discordSaver) (err error) {
 	return errors.New("not implemented")
 }
 func (g *Guild) deleteFromDiscord(session Session) (err error) {

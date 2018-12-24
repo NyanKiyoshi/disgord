@@ -7,6 +7,7 @@ import (
 	"github.com/andersfylling/disgord/constant"
 	"github.com/andersfylling/disgord/endpoint"
 	"github.com/andersfylling/disgord/httd"
+	"github.com/andersfylling/snowflake/v3"
 )
 
 // NewRole ...
@@ -28,6 +29,7 @@ type Role struct {
 	Mentionable bool      `json:"mentionable"`
 
 	guildID Snowflake
+	copyOf snowflake.ID
 }
 
 // Mention gives a formatted version of the role such that it can be parsed by Discord clients
@@ -42,9 +44,11 @@ func (r *Role) SetGuildID(id Snowflake) {
 
 // DeepCopy see interface at struct.go#DeepCopier
 func (r *Role) DeepCopy() (copy interface{}) {
-	copy = NewRole()
-	r.CopyOverTo(copy)
-
+	return r.Duplicate()
+}
+func (r *Role) Duplicate() (duplicate *Role) {
+	duplicate = NewRole()
+	r.CopyOverTo(duplicate)
 	return
 }
 
@@ -71,6 +75,8 @@ func (r *Role) CopyOverTo(other interface{}) (err error) {
 	role.Mentionable = r.Mentionable
 	role.guildID = r.guildID
 
+	role.copyOf = r.ID
+
 	if constant.LockedMethods {
 		r.RUnlock()
 		role.Unlock()
@@ -79,14 +85,27 @@ func (r *Role) CopyOverTo(other interface{}) (err error) {
 	return
 }
 
-func (r *Role) saveToDiscord(session Session) (err error) {
+func (r *Role) getDiscordID() snowflake.ID {
+	return r.ID
+}
+
+func (r *Role) isACopyOf(obj discordSaver) bool {
+	if or, ok := obj.(*Role); ok {
+		return r.copyOf == or.ID
+	}
+
+	return false
+}
+
+
+func (r *Role) saveToDiscord(session Session, changes discordSaver) (err error) {
 	if r.guildID.Empty() {
 		err = newErrorMissingSnowflake("role has no guildID")
 		return
 	}
 
 	var role *Role
-	if r.ID.Empty() {
+	if changes == nil {
 		// create role
 		params := CreateGuildRoleParams{
 			Name:        r.Name,
@@ -101,30 +120,42 @@ func (r *Role) saveToDiscord(session Session) (err error) {
 		}
 		err = role.CopyOverTo(r)
 	} else {
-		// modify/update role
-		params := ModifyGuildRoleParams{
-			Name:        r.Name,
-			Permissions: r.Permissions,
-			Color:       r.Color,
-			Hoist:       r.Hoist,
-			Mentionable: r.Mentionable,
-		}
-		role, err = session.ModifyGuildRole(r.guildID, r.ID, &params)
-		if err != nil {
-			return
-		}
-		if role.Position != r.Position {
-			// update the position
-			params := ModifyGuildRolePositionsParams{
-				ID:       r.ID,
-				Position: r.Position,
-			}
-			_, err = session.ModifyGuildRolePositions(r.guildID, &params)
-			if err != nil {
-				return
-			}
-			role.Position = r.Position
-		}
+		return errors.New("disgord.Role objects does not currently support SaveToDiscord abstraction")
+		// var changed *Role
+		// var ok bool
+		// if changed, ok = changes.(*Role); !ok {
+		// 	err = errors.New("the changed object, must be the same type as the base/first/original object")
+		// 	return
+		// }
+		// // modify/update role
+		// params := ModifyGuildRoleParams{
+		// 	Permissions: r.Permissions,
+		// 	Hoist:       r.Hoist,
+		// 	Mentionable: r.Mentionable,
+		// }
+		// if changed.Name != "" && changed.Name != r.Name {
+		// 	params.Name = changed.Name
+		// }
+		// if changed.Color != r.Color {
+		// 	params.Color = changed.Color
+		// }
+		//
+		// role, err = session.ModifyGuildRole(r.guildID, r.ID, &params)
+		// if err != nil {
+		// 	return
+		// }
+		// if role.Position != r.Position {
+		// 	// update the position
+		// 	params := ModifyGuildRolePositionsParams{
+		// 		ID:       r.ID,
+		// 		Position: r.Position,
+		// 	}
+		// 	_, err = session.ModifyGuildRolePositions(r.guildID, &params)
+		// 	if err != nil {
+		// 		return
+		// 	}
+		// 	role.Position = r.Position
+		// }
 	}
 
 	return

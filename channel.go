@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/andersfylling/disgord/constant"
+	"github.com/andersfylling/snowflake/v3"
 )
 
 // Channel types
@@ -114,6 +115,7 @@ type Channel struct {
 	//  }
 	complete      bool
 	recipientsIDs []Snowflake
+	copyOf snowflake.ID
 }
 
 func (c *Channel) valid() bool {
@@ -143,9 +145,21 @@ func (c *Channel) Compare(other *Channel) bool {
 	return (c == nil && other == nil) || (other != nil && c.ID == other.ID)
 }
 
-func (c *Channel) saveToDiscord(session Session) (err error) {
+func (c *Channel) getDiscordID() snowflake.ID {
+	return c.ID
+}
+
+func (c *Channel) isACopyOf(obj discordSaver) bool {
+	if or, ok := obj.(*Channel); ok {
+		return c.copyOf == or.ID
+	}
+
+	return false
+}
+
+func (c *Channel) saveToDiscord(session Session, changes discordSaver) (err error) {
 	var updated *Channel
-	if c.ID.Empty() {
+	if changes == nil {
 		if c.Type != ChannelTypeDM && c.Type != ChannelTypeGroupDM {
 			// create
 			if c.Name == "" {
@@ -198,8 +212,15 @@ func (c *Channel) saveToDiscord(session Session) (err error) {
 			err = errors.New("cannot save to discord. Does not recognise what needs to be saved")
 		}
 	} else {
+		var changed *Channel
+		var ok bool
+		if changed, ok = changes.(*Channel); !ok {
+			return errors.New("changes provided must be a *disgord.Channel object")
+		}
+
+
 		// modify / update channel
-		changes := ModifyChannelParams{}
+		params := ModifyChannelParams{}
 
 		// specific
 		if c.Type == ChannelTypeDM {
@@ -207,29 +228,43 @@ func (c *Channel) saveToDiscord(session Session) (err error) {
 		} else if c.Type == ChannelTypeGroupDM {
 			// nothing to change
 		} else if c.Type == ChannelTypeGuildText {
-			changes.SetNSFW(c.NSFW)
-			changes.SetTopic(c.Topic)
-			changes.SetRateLimitPerUser(c.RateLimitPerUser)
+			if changed.NSFW != c.NSFW {
+				params.SetNSFW(c.NSFW)
+			}
+			if changed.Topic != c.Topic {
+				params.SetTopic(c.Topic)
+			}
+			if changed.RateLimitPerUser != c.RateLimitPerUser {
+				params.SetRateLimitPerUser(c.RateLimitPerUser)
+			}
 		} else if c.Type == ChannelTypeGuildVoice {
-			changes.SetBitrate(c.Bitrate)
-			changes.SetUserLimit(c.UserLimit)
+			if changed.Bitrate != c.Bitrate {
+				params.SetBitrate(c.Bitrate)
+			}
+			if changed.UserLimit != c.UserLimit {
+				params.SetUserLimit(c.UserLimit)
+			}
 		}
 
 		// shared
-		if c.Type == ChannelTypeGuildVoice || c.Type == ChannelTypeGuildText {
-			if c.ParentID.Empty() {
-				changes.RemoveParentID()
+		if (c.Type == ChannelTypeGuildVoice || c.Type == ChannelTypeGuildText) && changed.ParentID != c.ParentID {
+			if !c.ParentID.Empty() && changed.ParentID.Empty() {
+				params.RemoveParentID()
 			} else {
-				changes.SetParentID(c.ParentID)
+				params.SetParentID(changed.ParentID)
 			}
 		}
 
 		// for all
-		changes.SetName(c.Name)
-		changes.SetPosition(c.Position)
-		changes.SetPermissionOverwrites(c.PermissionOverwrites)
+		if changed.Name != "" {
+			params.SetName(changed.Name)
+		}
+		if c.Position != changed.Position {
+			params.SetPosition(changed.Position)
+		}
+		params.SetPermissionOverwrites(changed.PermissionOverwrites)
 
-		updated, err = session.ModifyChannel(c.ID, &changes)
+		updated, err = session.ModifyChannel(c.ID, &params)
 	}
 
 	// verify discord request
@@ -258,9 +293,11 @@ func (c *Channel) deleteFromDiscord(session Session) (err error) {
 
 // DeepCopy see interface at struct.go#DeepCopier
 func (c *Channel) DeepCopy() (copy interface{}) {
-	copy = NewChannel()
-	c.CopyOverTo(copy)
-
+	return c.Duplicate()
+}
+func (c *Channel) Duplicate() (duplicate *Channel) {
+	duplicate = NewChannel()
+	c.CopyOverTo(duplicate)
 	return
 }
 
@@ -296,6 +333,8 @@ func (c *Channel) CopyOverTo(other interface{}) (err error) {
 	channel.ParentID = c.ParentID
 	channel.LastPinTimestamp = c.LastPinTimestamp
 	channel.LastMessageID = c.LastMessageID
+
+	channel.copyOf = c.ID // used in SaveToDiscord
 
 	// add recipients if it's a DM
 	for _, recipient := range c.Recipients {

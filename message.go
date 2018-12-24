@@ -14,6 +14,7 @@ import (
 	"github.com/andersfylling/disgord/constant"
 	"github.com/andersfylling/disgord/endpoint"
 	"github.com/andersfylling/disgord/httd"
+	"github.com/andersfylling/snowflake/v3"
 )
 
 // different message acticity types
@@ -88,6 +89,8 @@ type Message struct {
 	Type            uint               `json:"type"`
 	Activity        MessageActivity    `json:"activity"`
 	Application     MessageApplication `json:"application"`
+
+	copyOf snowflake.ID
 }
 
 // TODO: why is this method needed?
@@ -111,9 +114,11 @@ type messageDeleter interface {
 
 // DeepCopy see interface at struct.go#DeepCopier
 func (m *Message) DeepCopy() (copy interface{}) {
-	copy = NewMessage()
-	m.CopyOverTo(copy)
-
+	return m.Duplicate()
+}
+func (m *Message) Duplicate() (duplicate *Message) {
+	duplicate = NewMessage()
+	m.CopyOverTo(duplicate)
 	return
 }
 
@@ -144,6 +149,8 @@ func (m *Message) CopyOverTo(other interface{}) (err error) {
 	message.Type = m.Type
 	message.Activity = m.Activity
 	message.Application = m.Application
+
+	message.copyOf = m.ID
 
 	if m.Author != nil {
 		message.Author = m.Author.DeepCopy().(*User)
@@ -186,12 +193,27 @@ func (m *Message) deleteFromDiscord(session Session) (err error) {
 	err = session.DeleteMessage(m.ChannelID, m.ID)
 	return
 }
-func (m *Message) saveToDiscord(session Session) (err error) {
+
+func (m *Message) getDiscordID() snowflake.ID {
+	return m.ID
+}
+
+func (m *Message) isACopyOf(obj discordSaver) bool {
+	if or, ok := obj.(*Message); ok {
+		return m.copyOf == or.ID
+	}
+
+	return false
+}
+
+func (m *Message) saveToDiscord(session Session, changes discordSaver) (err error) {
 	var message *Message
-	if m.ID.Empty() {
+	if changes == nil {
 		message, err = m.Send(session)
 	} else {
-		message, err = m.update(session)
+		err = errors.New("message updating is not implemented")
+		return
+		//message, err = m.update(session)
 	}
 
 	message.CopyOverTo(m)

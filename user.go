@@ -9,6 +9,7 @@ import (
 	"github.com/andersfylling/disgord/constant"
 	"github.com/andersfylling/disgord/endpoint"
 	"github.com/andersfylling/disgord/httd"
+	"github.com/andersfylling/snowflake/v3"
 )
 
 const (
@@ -482,8 +483,11 @@ func (u *User) SendMsgString(session Session, content string) (channel *Channel,
 // DeepCopy see interface at struct.go#DeepCopier
 // CopyOverTo see interface at struct.go#Copier
 func (u *User) DeepCopy() (copy interface{}) {
-	copy = NewUser()
-	u.CopyOverTo(copy)
+	return u.Duplicate()
+}
+func (u *User) Duplicate() (duplicate *User) {
+	duplicate = NewUser()
+	u.CopyOverTo(duplicate)
 
 	return
 }
@@ -571,7 +575,17 @@ func (u *User) copyOverToCache(other interface{}) (err error) {
 	return
 }
 
-func (u *User) saveToDiscord(session Session) (err error) {
+func (u *User) getDiscordID() snowflake.ID {
+	return u.ID
+}
+
+func (u *User) isACopyOf(obj discordSaver) bool {
+	// this method is used in the SaveToDiscord to validate if the Message.saveToDiscord method can be called to update
+	// we return true, cause the saveToDiscord method for user is kinda.. unique.
+	return true
+}
+
+func (u *User) saveToDiscord(session Session, changes discordSaver) (err error) {
 	var myself *User
 	myself, err = session.Myself()
 	if err != nil {
@@ -582,7 +596,7 @@ func (u *User) saveToDiscord(session Session) (err error) {
 		return
 	}
 
-	if myself.ID != u.ID {
+	if myself.ID != u.ID || changes != nil {
 		err = errors.New("can only update current user")
 		return
 	}
