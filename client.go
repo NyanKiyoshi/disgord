@@ -67,6 +67,7 @@ func NewClient(conf *Config) (*Client, error) {
 		} else {
 			ensureBasicCacheConfig(conf.CacheConfig)
 		}
+		conf.CacheConfig.Log = conf.Logger
 		cacher, err = newCache(conf.CacheConfig)
 		if err != nil {
 			return nil, err

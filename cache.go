@@ -120,6 +120,7 @@ func newCache(conf *CacheConfig) (*Cache, error) {
 		voiceStates: voiceStateCacher,
 		channels:    channelCacher,
 		guilds:      guildCacher,
+		log:         conf.Log,
 	}, nil
 }
 
@@ -179,6 +180,8 @@ type CacheConfig struct {
 	GuildCacheMaxEntries uint
 	GuildCacheLifetime   time.Duration
 	GuildCacheAlgorithm  string
+
+	Log Logger
 }
 
 // Cache is the actual cacheLink. It holds the different systems which can be tweaked using the CacheConfig.
@@ -189,7 +192,27 @@ type Cache struct {
 	voiceStates interfaces.CacheAlger
 	channels    interfaces.CacheAlger
 	guilds      interfaces.CacheAlger
+
+	log Logger
 }
+
+func (c *Cache) Info(msg string) {
+	if c.log != nil {
+		c.log.Info(msg)
+	}
+}
+func (c *Cache) Debug(msg string) {
+	if c.log != nil {
+		c.log.Debug(msg)
+	}
+}
+func (c *Cache) Error(msg string) {
+	if c.log != nil {
+		c.log.Error(msg)
+	}
+}
+
+var _ Logger = (*Cache)(nil)
 
 // Updates does the same as Update. But allows for a slice of entries instead.
 func (c *Cache) Updates(key cacheRegistry, vs []interface{}) (err error) {
@@ -336,9 +359,15 @@ func (g *guildCacheItem) process(guild *Guild, immutable bool) {
 	if immutable {
 		g.guild = guild.DeepCopy().(*Guild)
 
-		for _, member := range g.guild.Members {
-			member.userID = member.User.ID
-			member.User = nil
+		for i := range g.guild.Members {
+			g.guild.Members[i].userID = g.guild.Members[i].User.ID
+			g.guild.Members[i].User = nil
+		}
+
+		g.channels = make([]snowflake.ID, len(g.guild.Channels))
+		for i := range g.guild.Channels {
+			g.channels[i] = g.guild.Channels[i].ID
+			g.guild.Channels[i] = nil
 		}
 	} else {
 		g.guild = guild
@@ -364,6 +393,22 @@ func (g *guildCacheItem) build(cache *Cache) (guild *Guild) {
 				}
 			}
 		}
+
+		// in case users are no longer in the cache
+		removeMembers := []int{}
+		for i := range guild.Members {
+			guild.Members[i].User, err = cache.GetUser(guild.Members[i].userID)
+			if err != nil {
+				removeMembers = append(removeMembers, i-len(removeMembers))
+			}
+		}
+
+		for j := range removeMembers {
+			i := removeMembers[j]
+			cache.Debug("removed member from guild{" + guild.ID.String() + "}, cause user was not in cache: " + guild.Members[i].userID.String())
+			guild.Members = append(guild.Members[:i], guild.Members[i+1:]...)
+		}
+
 		// TODO: voice state
 	} else {
 		guild = g.guild
@@ -520,6 +565,14 @@ func (g *guildCacheItem) deleteChannel(id Snowflake) {
 func (c *Cache) SetGuild(guild *Guild) {
 	if c.guilds == nil || guild == nil {
 		return
+	}
+
+	// TODO: racecondition
+	for i := range guild.Channels {
+		c.SetChannel(guild.Channels[i])
+	}
+	for i := range guild.Members {
+		c.SetUser(guild.Members[i].User)
 	}
 
 	c.guilds.Lock()
@@ -1155,6 +1208,12 @@ func (c *channelCacheItem) update(fresh *Channel, immutable bool) {
 func (c *Cache) SetChannel(new *Channel) {
 	if c.channels == nil || new == nil {
 		return
+	}
+
+	if len(new.Recipients) > 0 {
+		for i := range new.Recipients {
+			c.SetUser(new.Recipients[i])
+		}
 	}
 
 	c.channels.Lock()

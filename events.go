@@ -53,12 +53,6 @@ func cacheEvent(cache Cacher, event string, v interface{}) (err error) {
 		} else if event == EventChannelUpdate {
 			channel = (v.(*ChannelUpdate)).Channel
 		}
-		if len(channel.Recipients) > 0 {
-			for i := range channel.Recipients {
-				updates[UserCache] = append(updates[UserCache], channel.Recipients[i])
-			}
-		}
-
 		updates[ChannelCache] = append(updates[ChannelCache], channel)
 	case EventChannelDelete:
 		channel := (v.(*ChannelDelete)).Channel
@@ -75,14 +69,6 @@ func cacheEvent(cache Cacher, event string, v interface{}) (err error) {
 			guild = (v.(*GuildUpdate)).Guild
 		}
 		updates[GuildCache] = append(updates[GuildCache], guild)
-
-		// update all users
-		if len(guild.Members) > 0 {
-			updates[UserCache] = make([]interface{}, len(guild.Members))
-			for i := range guild.Members {
-				updates[UserCache][i] = guild.Members[i].User
-			}
-		}
 	case EventGuildDelete:
 		uguild := (v.(*GuildDelete)).UnavailableGuild
 		cache.DeleteGuild(uguild.ID)

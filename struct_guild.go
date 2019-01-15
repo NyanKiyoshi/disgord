@@ -431,6 +431,7 @@ func (g *Guild) LoadAllMembers(session Session) (err error) {
 		lastCount = len(members)
 	}
 
+	session.Cache().Update(GuildCache, g)
 	return nil
 }
 

@@ -185,6 +185,21 @@ func (list *CacheList) Delete(id Snowflake) {
 	}
 }
 
+func (list *CacheList) Foreach(cb func(interface{})) {
+	for i := range list.items {
+		cb(list.items[i])
+	}
+}
+
+func (list *CacheList) ListIDs() (ids []snowflake.ID) {
+	ids = make([]snowflake.ID, len(list.items))
+	for i := range list.items {
+		ids[i] = list.items[i].id
+	}
+
+	return ids
+}
+
 // CreateCacheableItem ...
 func (list *CacheList) CreateCacheableItem(content interface{}) interfaces.CacheableItem {
 	return NewCacheItem(content)

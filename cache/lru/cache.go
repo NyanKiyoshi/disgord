@@ -22,6 +22,7 @@ func NewCacheItem(content interface{}) *CacheItem {
 type CacheItem struct {
 	item     interface{}
 	lastUsed int64
+	id       snowflake.ID
 }
 
 func (i *CacheItem) Object() interface{} {
@@ -97,6 +98,7 @@ func (list *CacheList) First() (item *CacheItem, key Snowflake) {
 // set adds a new item to the list or returns false if the item already exists
 func (list *CacheList) Set(id Snowflake, newItemI interfaces.CacheableItem) {
 	newItem := newItemI.(*CacheItem)
+	newItem.id = id
 	if item, exists := list.items[id]; exists { // check if it points to a diff item
 		if item.item != newItem.item || item != newItem {
 			*item = *newItem
@@ -148,6 +150,21 @@ func (list *CacheList) Delete(id Snowflake) {
 	if _, exists := list.items[id]; exists {
 		delete(list.items, id)
 	}
+}
+
+func (list *CacheList) Foreach(cb func(interface{})) {
+	for i := range list.items {
+		cb(list.items[i])
+	}
+}
+
+func (list *CacheList) ListIDs() (ids []snowflake.ID) {
+	ids = make([]snowflake.ID, len(list.items))
+	for i := range list.items {
+		ids[i] = list.items[i].id
+	}
+
+	return ids
 }
 
 func (list *CacheList) CreateCacheableItem(content interface{}) interfaces.CacheableItem {
