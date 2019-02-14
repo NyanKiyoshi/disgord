@@ -12,6 +12,8 @@ import (
 	"github.com/andersfylling/snowflake/v3"
 )
 
+var _ zeroInitialiser = (*Emoji)(nil)
+
 // Emoji ...
 type Emoji struct {
 	mu Lockable
